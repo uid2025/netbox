@@ -183,21 +183,20 @@ class TokenValidationTestCase(TestCase):
     def test_token_expiry_more_than_one_year(self):
         validator_path = 'users.tests.test_models.TokenExpiryDurationValidator'
         with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
-            created_time = timezone.now() - relativedelta(days=10) # Token created 10 days ago
-            expires_time = created_time + relativedelta(years=1, days=1) # Expires in 1 year and 1 day
-            # Need a unique key for each token
-            token = Token(user=self.user, description="Test", created=created_time, expires=expires_time, key="3123456789abcdef0123456789abcdef01234567")
+            created_time = timezone.now() - relativedelta(days=10)
+            expires_time = created_time + relativedelta(years=1, days=1)
+            token = Token(user=self.user, key=Token.generate_key(), description="Test", created=created_time, expires=expires_time)
             with self.assertRaises(ValidationError) as cm:
                 token.full_clean()
-            self.assertIn("Token expiry cannot exceed 1 year from its creation date.", str(cm.exception.message_dict['expires']))
+            self.assertIn("Token expiry cannot exceed 1 year from its creation date.", cm.exception.message_dict.get('expires', [''])[0])
 
     def test_token_expiry_exactly_one_year(self):
         validator_path = 'users.tests.test_models.TokenExpiryDurationValidator'
         with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
             created_time = timezone.now() - relativedelta(days=10)
             expires_time = created_time + relativedelta(years=1)
-            token = Token(user=self.user, description="Test", created=created_time, expires=expires_time, key="4123456789abcdef0123456789abcdef01234567")
-            token.full_clean() # Should not raise
+            token = Token(user=self.user, key=Token.generate_key(), description="Test", created=created_time, expires=expires_time)
+            token.full_clean() 
             token.save()
             self.assertTrue(Token.objects.filter(pk=token.pk).exists())
 
@@ -206,37 +205,35 @@ class TokenValidationTestCase(TestCase):
         with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
             created_time = timezone.now() - relativedelta(days=10)
             expires_time = created_time + relativedelta(months=6)
-            token = Token(user=self.user, description="Test", created=created_time, expires=expires_time, key="5123456789abcdef0123456789abcdef01234567")
-            token.full_clean() # Should not raise
+            token = Token(user=self.user, key=Token.generate_key(), description="Test", created=created_time, expires=expires_time)
+            token.full_clean() 
             token.save()
             self.assertTrue(Token.objects.filter(pk=token.pk).exists())
 
-    def test_token_no_expiry_date(self):
+    def test_token_no_expiry_date_with_duration_validator(self): # Renamed for clarity
         validator_path = 'users.tests.test_models.TokenExpiryDurationValidator'
         with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
-            token = Token(user=self.user, description="Test", expires=None, key="6123456789abcdef0123456789abcdef01234567")
-            token.full_clean() # Should not raise, as this validator doesn't require expiry
+            token = Token(user=self.user, key=Token.generate_key(), description="Test No Expiry", expires=None)
+            token.full_clean() 
             token.save()
             self.assertTrue(Token.objects.filter(pk=token.pk).exists())
 
     def test_new_token_expiry_more_than_one_year_from_today(self):
-        # Test for new token where instance.created is None at validation time
         validator_path = 'users.tests.test_models.TokenExpiryDurationValidator'
         with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
             expires_time = timezone.now() + relativedelta(years=1, days=1)
-            token = Token(user=self.user, description="New Token Test", expires=expires_time, key="7123456789abcdef0123456789abcdef01234567")
+            token = Token(user=self.user, key=Token.generate_key(), description="New Token Test", expires=expires_time)
             with self.assertRaises(ValidationError) as cm:
                 token.full_clean()
-            self.assertIn("Token expiry cannot exceed 1 year from its creation date.", str(cm.exception.message_dict['expires']))
+            self.assertIn("Token expiry cannot exceed 1 year from its creation date.", cm.exception.message_dict.get('expires', [''])[0])
             
     def test_new_token_expiry_within_one_year_from_today(self):
         validator_path = 'users.tests.test_models.TokenExpiryDurationValidator'
         with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
             expires_time = timezone.now() + relativedelta(months=6)
-            token = Token(user=self.user, description="New Token Test", expires=expires_time, key="8123456789abcdef0123456789abcdef01234567")
-            token.full_clean() # Should not raise
-            # Not saving, as 'created' would then be set by DB, changing test condition slightly.
-            # The key is that full_clean() passes.
+            token = Token(user=self.user, key=Token.generate_key(), description="New Token Test", expires=expires_time)
+            token.full_clean() 
+            # Not saving, to ensure 'created' is None during full_clean for this specific test case.
 
     def test_token_creation_custom_rule_not_configured_for_model(self):
         """
