@@ -1,6 +1,16 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 
-from users.models import User
+from users.models import User, Token
+from extras.validators import CustomValidator
+
+
+# Helper custom validator for tests
+class TestTokenDescriptionValidator(CustomValidator):
+    def validate(self, instance, request=None):
+        if instance.description == "FAIL_VALIDATION":
+            self.fail("Description cannot be FAIL_VALIDATION.", field='description')
 
 
 class UserConfigTest(TestCase):
@@ -104,3 +114,54 @@ class UserConfigTest(TestCase):
 
         # Clear a non-existing value; should fail silently
         userconfig.clear('invalid')
+
+
+class TokenValidationTestCase(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user(username='testuser_token_validation')
+
+    def test_token_creation_valid_no_custom_rules(self):
+        """
+        Test that a token can be created successfully when no custom validation rules are active.
+        """
+        token = Token(user=self.user, description="FAIL_VALIDATION", key="0123456789abcdef0123456789abcdef01234567")
+        token.full_clean()  # Should not raise
+        token.save()
+        self.assertTrue(Token.objects.filter(pk=token.pk).exists())
+
+    def test_token_creation_violates_custom_rule(self):
+        """
+        Test that token creation fails if a custom validation rule is violated.
+        """
+        validator_path = 'users.tests.test_models.TestTokenDescriptionValidator'
+        with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
+            token = Token(user=self.user, description="FAIL_VALIDATION", key="0123456789abcdef0123456789abcdef0123456_")
+            with self.assertRaises(ValidationError) as cm:
+                token.full_clean()
+            self.assertIn("Description cannot be FAIL_VALIDATION.", str(cm.exception.message_dict['description']))
+
+    def test_token_creation_passes_custom_rule(self):
+        """
+        Test that token creation succeeds if it passes custom validation rules.
+        """
+        validator_path = 'users.tests.test_models.TestTokenDescriptionValidator'
+        with override_settings(CUSTOM_VALIDATORS={'users.token': [validator_path]}):
+            token = Token(user=self.user, description="PASS_VALIDATION", key="1123456789abcdef0123456789abcdef01234567")
+            token.full_clean()  # Should not raise
+            token.save()
+            self.assertTrue(Token.objects.filter(pk=token.pk).exists())
+
+    def test_token_creation_custom_rule_not_configured_for_model(self):
+        """
+        Test that token creation succeeds if a custom rule is configured for a different model.
+        """
+        validator_path = 'users.tests.test_models.TestTokenDescriptionValidator'
+        # Configure the validator for 'dcim.site' instead of 'users.token'
+        with override_settings(CUSTOM_VALIDATORS={'dcim.site': [validator_path]}):
+            token = Token(user=self.user, description="FAIL_VALIDATION", key="2123456789abcdef0123456789abcdef01234567")
+            token.full_clean()  # Should not raise
+            token.save()
+            self.assertTrue(Token.objects.filter(pk=token.pk).exists())

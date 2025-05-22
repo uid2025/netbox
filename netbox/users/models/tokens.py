@@ -12,13 +12,14 @@ from netaddr import IPNetwork
 
 from ipam.fields import IPNetworkField
 from utilities.querysets import RestrictedQuerySet
+from netbox.models.features import CustomValidationMixin
 
 __all__ = (
     'Token',
 )
 
 
-class Token(models.Model):
+class Token(CustomValidationMixin, models.Model):
     """
     An API token used for user authentication. This extends the stock model to allow each user to have multiple tokens.
     It also supports setting an expiration time and toggling write ability.

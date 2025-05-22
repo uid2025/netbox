@@ -80,6 +80,16 @@ CUSTOM_VALIDATORS = {
                 "required": True,
             }
         }
+    ],
+    "users.token": [  # Example for User Tokens
+        {
+            "description": {
+                "min_length": 10
+            },
+            "expires": {
+                "required": True # Example: making token expiry mandatory
+            }
+        }
     ]
 }
 ```
